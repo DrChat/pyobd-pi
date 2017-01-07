@@ -1,6 +1,25 @@
 import serial
 import platform
 
+HAS_PYBLUEZ = True
+try:
+    import bluetooth as bt
+except ImportError:
+    HAS_PYBLUEZ = False
+
+def scanBluetooth(time=4):
+    """Scan for available bluetooth ports. Returns a list of MAC addresses"""
+    if not HAS_PYBLUEZ:
+      return []
+
+    available = []
+    try:
+      available = bt.discover_devices(time)
+    except IOError:
+      return []
+    
+    return available
+
 def scanSerial():
     """scan for available ports. return a list of serial names"""
     available = []

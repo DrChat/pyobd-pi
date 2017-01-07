@@ -7,7 +7,7 @@ import obd_sensors
 from datetime import datetime
 import time
 
-from obd_utils import scanSerial
+from obd_utils import scanSerial, scanBluetooth
 
 class OBD_Capture():
     def __init__(self):
@@ -15,23 +15,31 @@ class OBD_Capture():
         self.port = None
         localtime = time.localtime(time.time())
 
-    def connect(self):
-        portnames = scanSerial()
-        print portnames
-        for port in portnames:
-            self.port = obd_io.OBDPort(port, None, 2, 2)
-            if(self.port.State == 0):
-                self.port.close()
-                self.port = None
-            else:
-                break
+    def connect(self, port):
+        self.port = obd_io.OBDPort(port, None, 2, 2)
+        if(self.port.State == 0):
+            # Failed to connect.
+            self.port.close()
+            self.port = None
+        else:
+            break
 
         if(self.port):
-            print "Connected to "+self.port.port.name
-            
+            print "Connected to " + self.port.PortName
+            return True
+        
+        return False
+
+    def scan_ports():
+        ports = []
+        ports.extend(scanSerial())
+        ports.extend(scanBluetooth())
+
+        return ports
+
     def is_connected(self):
         return self.port
-        
+
     def getSupportedSensorList(self):
         return self.supportedSensorList 
 
@@ -42,6 +50,9 @@ class OBD_Capture():
         # its a string of binary 01010101010101 
         # 1 means the sensor is supported
         self.supp = self.port.sensor(0)[1]
+        if self.supp == "NODATA":
+            print("OBD_Capture::capture_data - No data returned for sensors!")
+
         self.supportedSensorList = []
         self.unsupportedSensorList = []
 
@@ -77,7 +88,12 @@ class OBD_Capture():
 if __name__ == "__main__":
 
     o = OBD_Capture()
-    o.connect()
+    ports = o.scan_ports()
+    if len(ports) == 0:
+        print "No ports found"
+        exit()
+
+    o.connect(ports[0])
     time.sleep(3)
     if not o.is_connected():
         print "Not connected"

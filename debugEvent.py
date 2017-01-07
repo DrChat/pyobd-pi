@@ -25,14 +25,20 @@ try:
     import wx
     
     EVT_DEBUG_ID = 1010
-    
+    DISPLAY_DEBUG = 1
+    DISPLAY_WARNING = 2
+    DISPLAY_ERROR = 3
+
     def debug_display(window, position, message):
-        if window is None:
-            print message
-        else:
+        print message
+        if window:
             wx.PostEvent(window, DebugEvent([position, message]))
        
     class DebugEvent(wx.PyEvent):
+        DISPLAY_DEBUG = 1
+        DISPLAY_WARNING = 2
+        DISPLAY_ERROR = 3
+
         """Simple event to carry arbitrary result data."""
         def __init__(self, data):
             """Init Result Event."""

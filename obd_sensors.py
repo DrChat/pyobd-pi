@@ -23,8 +23,7 @@
 ###########################################################################
 
 def hex_to_int(str):
-    i = eval("0x" + str, {}, {})
-    return i
+    return int(str, 16)
 
 def maf(code):
     code = hex_to_int(code)
@@ -101,14 +100,13 @@ def dtc_decrypt(code):
     
     res.append(((numD>>7)&0x01)) #EGR SystemC7  bit of different 
     
-    #return res
-    return "#"
+    return res
 
 def hex_to_bitstring(str):
-    bitstring = ""
+    bitstring = ''
     for i in str:
         # silly type safety, we don't want to eval random stuff
-        if type(i) == type(''): 
+        if type(i) == type('') or type(i) == type(u''): 
             v = eval("0x%s" % i)
             if v & 8 :
                 bitstring += '1'
