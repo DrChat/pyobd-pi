@@ -30,6 +30,7 @@ import wx
 import obd_io  # OBD2 funcs
 import os  # os.environ
 
+from datetime import datetime
 import threading
 import sys
 import serial
@@ -119,6 +120,7 @@ class TestEvent(wx.PyEvent):
        self.data = data
 
 EVT_MONDATA_ID = 1004
+
 
 class MonitorDataEvent(wx.PyEvent):
     """Event that carries a line of monitor data"""
@@ -218,8 +220,8 @@ class MyApp(wx.App):
                         if self.active[i]:
                             s = self.port.sensor(i)
                             wx.PostEvent(self._notify_window, ResultEvent(
-                                        [i, 2, "%s (%s)" % (s[1], s[2])]))
-                    
+                                [i, 2, "%s (%s)" % (s[1], s[2])]))
+
                         # exit
                         if self._notify_window.ThreadControl == 666:
                             break
@@ -262,13 +264,23 @@ class MyApp(wx.App):
 
                             lines = self.port.recv_data()
                             for line in lines:
-                                print("Data: " + line)
+                                print(line)
                                 if line == 'BUFFER FULL':
                                     # If you poke it, it'll keep dumping data
                                     self.port.send_raw('\r')
-                                    break
-                                #wx.PostEvent(self._notify_window, MonitorDataEvent(
-                                #    [time.now(), line]))\
+                                    nlines = self.port.recv_data()
+                                    if len(nlines) > 1 and nlines[1][0] == '>':
+                                        # strip chevron
+                                        nlines[1] = nlines[1][1:]
+
+                                        # also pop off empty line
+                                        nlines.pop(0)
+
+                                    lines.extend(nlines)
+                                    continue
+
+                                wx.PostEvent(self._notify_window, MonitorDataEvent(
+                                    [datetime.now().strftime("%H:%M:%S.%f"), line]))
 
                         # disable monitor mode
                         self.port.enable_monitor(False)
@@ -315,6 +327,8 @@ class MyApp(wx.App):
         self.dtcmenu.Enable(ID_CLEAR, True)
         self.GetDTCButton.Enable(True)
         self.ClearDTCButton.Enable(True)
+        self.BeginMonitorButton.Enable(True)
+        self.EndMonitorButton.Enable(True)
 
         def sensor_toggle(e):
             sel = e.m_itemIndex
@@ -340,8 +354,8 @@ class MyApp(wx.App):
         self.settingmenu.Enable(ID_RESET, True)
         self.GetDTCButton.Enable(False)
         self.ClearDTCButton.Enable(False)
-        #http://pyserial.sourceforge.net/                                                    empty function
-        #EVT_LIST_ITEM_ACTIVATED(self.sensors,self.sensor_id, lambda : None)
+        self.BeginMonitorButton.Enable(False)
+        self.EndMonitorButton.Enable(False)
 
     def build_sensor_page(self):
         HOFFSET_LIST = 0
@@ -429,7 +443,7 @@ class MyApp(wx.App):
             wx.EVT_BUTTON, self.EndMonitoring, self.EndMonitorButton)
 
         self.monitor = self.MyListCtrl(self.Monitorpanel, tID, pos=wx.Point(0, HOFFSET_LIST),
-                                   style=wx.LC_REPORT | wx.SUNKEN_BORDER | wx.LC_HRULES | wx.LC_SINGLE_SEL)
+                                       style=wx.LC_REPORT | wx.SUNKEN_BORDER | wx.LC_HRULES | wx.LC_SINGLE_SEL)
 
         self.monitor.InsertColumn(0, "Time", width=100)
         self.monitor.InsertColumn(1, "Bytes")
@@ -487,6 +501,7 @@ class MyApp(wx.App):
         EVT_RESULT(self, self.OnDtc, EVT_DTC_ID)
         EVT_RESULT(self, self.OnStatus, EVT_STATUS_ID)
         EVT_RESULT(self, self.OnTests, EVT_TESTS_ID)
+        EVT_RESULT(self, self.OnMonitorData, EVT_MONDATA_ID)
 
         # Main notebook frames
         self.nb = wx.Notebook(frame, -1, style=wx.NB_TOP)
@@ -642,6 +657,9 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
     def OnTests(self, event):
         self.OBDTests.SetStringItem(
             event.data[0], event.data[1], event.data[2])
+
+    def OnMonitorData(self, event):
+        self.monitor.Append(event)
 
     def OnDebug(self, event):
         self.TraceDebug(event.data[0], event.data[1])
