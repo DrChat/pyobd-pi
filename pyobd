@@ -23,27 +23,25 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 ############################################################################
 
+import ConfigParser  # safe application configuration
+import os  # os.environ
+import platform
+import sys
+import threading
+import time
+import webbrowser  # open browser from python
+from datetime import datetime
+
+import serial
 #import wxversion
 #wxversion.select("2.6")
 import wx
+from wx.lib.mixins.listctrl import ListCtrlAutoWidthMixin
 
 import obd_io  # OBD2 funcs
-import os  # os.environ
-
-from datetime import datetime
-import threading
-import sys
-import serial
-import platform
-import time
-import ConfigParser  # safe application configuration
-import webbrowser  # open browser from python
-
-from obd2_codes import pcodes
-from obd2_codes import ptest
-from obd_utils import scanSerial, scanBluetooth
-
-from wx.lib.mixins.listctrl import ListCtrlAutoWidthMixin
+from debugEvent import *
+from obd2_codes import pcodes, ptest
+from obd_utils import scanBluetooth, scanSerial
 
 ID_ABOUT = 101
 ID_EXIT = 110
@@ -130,8 +128,6 @@ class MonitorDataEvent(wx.PyEvent):
         self.SetEventType(EVT_MONDATA_ID)
         self.data = data
 
-#defines notification event for debug tracewindow
-from debugEvent import *
 
 
 class MyApp(wx.App):
@@ -194,11 +190,13 @@ class MyApp(wx.App):
             if self.port.State == 0:  # cant connect, exit thread
               self.stop()
               # signal apl, that communication was disconnected
-              wx.PostEvent(self._notify_window, StatusEvent([666]))
+              wx.PostEvent(self._notify_window, StatusEvent([-1]))
               wx.PostEvent(self._notify_window, StatusEvent(
                   [0, 1, "Error cant connect..."]))
               return None
 
+            # tell the application that we're connected
+            wx.PostEvent(self._notify_window, StatusEvent([1]))
             wx.PostEvent(self._notify_window, StatusEvent([0, 1, "Connected"]))
             wx.PostEvent(self._notify_window, StatusEvent(
                 [2, 1, self.port.ELMver]))
@@ -264,19 +262,25 @@ class MyApp(wx.App):
 
                             lines = self.port.recv_data()
                             for line in lines:
-                                print(line)
                                 if line == 'BUFFER FULL':
                                     # If you poke it, it'll keep dumping data
                                     self.port.send_raw('\r')
                                     nlines = self.port.recv_data()
-                                    if len(nlines) > 1 and nlines[1][0] == '>':
-                                        # strip chevron
-                                        nlines[1] = nlines[1][1:]
-
-                                        # also pop off empty line
-                                        nlines.pop(0)
-
                                     lines.extend(nlines)
+                                    continue
+
+                                line.strip()
+                                if line == '':
+                                    # ignore blank lines
+                                    continue
+
+                                if line[0] == '>':
+                                    # strip chevron
+                                    line = line[1:]
+
+                                # HACK: Make sure the lines are proper length (some may be cut off)
+                                # [3 char id] b1 b2 ... b8 [1 trailing whitespace]
+                                if len(line) != 4 + 8 * 3:
                                     continue
 
                                 wx.PostEvent(self._notify_window, MonitorDataEvent(
@@ -433,6 +437,10 @@ class MyApp(wx.App):
             self.Monitorpanel, -1, "Begin Monitoring", wx.Point(15, 0))
         self.EndMonitorButton = wx.Button(
             self.Monitorpanel, -1, "End Monitoring", wx.Point(130, 0))
+        self.ClearMonitorButton = wx.Button(
+            self.Monitorpanel, -1, "Clear", wx.Point(235, 0))
+        self.SaveMonitorButton = wx.Button(
+            self.Monitorpanel, -1, "Save As...", wx.Point(325, 0))
 
         self.EndMonitorButton.Enable(False)
 
@@ -441,6 +449,10 @@ class MyApp(wx.App):
             wx.EVT_BUTTON, self.BeginMonitoring, self.BeginMonitorButton)
         self.Monitorpanel.Bind(
             wx.EVT_BUTTON, self.EndMonitoring, self.EndMonitorButton)
+        self.Monitorpanel.Bind(
+            wx.EVT_BUTTON, self.ClearMonitor, self.ClearMonitorButton)
+        self.Monitorpanel.Bind(
+            wx.EVT_BUTTON, self.SaveMonitor, self.SaveMonitorButton)
 
         self.monitor = self.MyListCtrl(self.Monitorpanel, tID, pos=wx.Point(0, HOFFSET_LIST),
                                        style=wx.LC_REPORT | wx.SUNKEN_BORDER | wx.LC_HRULES | wx.LC_SINGLE_SEL)
@@ -648,8 +660,14 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
         self.sensors.SetStringItem(event.data[0], event.data[1], event.data[2])
 
     def OnStatus(self, event):
-        if event.data[0] == 666:  # signal, that connection falied
-            self.sensor_control_off()
+        # control event
+        if len(event.data) == 1:
+            if event.data[0] == -1:  # signal, that connection failed
+                self.sensor_control_off()
+            elif event.data[0] == 0:  # disconnected
+                self.sensor_control_off()
+            elif event.data[0] == 1:  # connected
+                self.sensor_control_on()
         else:
             self.status.SetStringItem(
                 event.data[0], event.data[1], event.data[2])
@@ -659,7 +677,11 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
             event.data[0], event.data[1], event.data[2])
 
     def OnMonitorData(self, event):
-        self.monitor.Append(event)
+        self.monitor.Append(event.data)
+
+        # Ensure it's visible
+        # TODO: Add a button to disable this
+        self.monitor.EnsureVisible(self.monitor.GetItemCount() - 1)
 
     def OnDebug(self, event):
         self.TraceDebug(event.data[0], event.data[1])
@@ -675,15 +697,14 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
         self.sensor_control_off()
 
     def OpenPort(self, e):
-
         if self.senprod:  # signal current producers to finish
             self.senprod.stop()
         self.ThreadControl = 0
         self.senprod = self.sensorProducer(
             self, self.COMPORT, self.SERTIMEOUT, self.RECONNATTEMPTS, self.nb)
-        self.senprod.start()
 
-        self.sensor_control_on()
+        # senprod will post a status event when connection succeeded.
+        self.senprod.start()
 
     def GetDTC(self, e):
         self.nb.SetSelection(3)
@@ -704,6 +725,30 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
         if self.senprod:
             self.EndMonitorButton.Enable(False)
             self.ThreadControl = 0
+    
+    def ClearMonitor(self, e):
+        self.monitor.DeleteAllItems()
+
+    def SaveMonitor(self, e):
+        dlg = wx.FileDialog(self.frame, "Save Data As...", os.getcwd(), "", "*.csv", wx.SAVE | wx.OVERWRITE_PROMPT)
+        result = dlg.ShowModal()
+        file_path = dlg.GetPath()
+        dlg.Destroy()
+
+        if result == wx.ID_OK:
+            # TODO: IOError permission denied(write)
+            f = open(file_path, "w+")
+            if not f:
+                self.TraceDebug(3, "Failed to open file %s" % file_path)
+                return
+
+            f.write('Time,Data,\n')
+            for i in range(0, self.monitor.GetItemCount()):
+                time = self.monitor.GetItem(i, 0).GetText()
+                data = self.monitor.GetItem(i, 1).GetText()
+                f.write('"%s","%s",\n' % (time, data))
+            
+            f.close()
 
     def CodeLookup(self, e=None):
         id = 0

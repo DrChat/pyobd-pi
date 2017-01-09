@@ -22,13 +22,18 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 ###########################################################################
 
-import serial
-import bluetooth as bt
 import re
 import string
 import time
-from math import ceil
 from datetime import datetime
+from math import ceil
+
+import bluetooth as bt
+import serial
+
+import obd_sensors
+from debugEvent import DebugEvent, debug_display
+from obd_sensors import hex_to_int
 
 HAS_PYBLUEZ = True
 try:
@@ -38,15 +43,12 @@ except ImportError as e:
     print(e)
     HAS_PYBLUEZ = False
 
-import obd_sensors
 
-from obd_sensors import hex_to_int
 
 GET_DTC_COMMAND = "03"  # Mode 03 (no PID)
 CLEAR_DTC_COMMAND = "04"  # Mode 04 (no PID)
 GET_FREEZE_DTC_COMMAND = "07"  # Mode 07 (no PID)
 
-from debugEvent import debug_display, DebugEvent
 
 #__________________________________________________________________________
 
@@ -104,7 +106,7 @@ class OBDPort:
         self.PortName = "Unknown"
 
         # state SERIAL is 1 connected, 0 disconnected (connection failed)
-        self.State = 1
+        self.State = 0
         self._port = None
         self._sock = None
         self._echo_enabled = True  # enabled by default
@@ -116,13 +118,19 @@ class OBDPort:
         if is_mac_address(portnum) and HAS_PYBLUEZ:
             debug_display(self._notify_window, DebugEvent.DISPLAY_DEBUG,
                           "Opening interface (bluetooth RFCOMM)")
-            try:
-                self._sock = bt.BluetoothSocket(bt.RFCOMM)
-                self._sock.connect((portnum, 1))
-            except IOError as e:
+            connected = False
+            for i in range(0, RECONNATTEMPTS):
+                try:
+                    self._sock = bt.BluetoothSocket(bt.RFCOMM)
+                    self._sock.connect((portnum, 1))
+                    connected = True
+                    break
+                except IOError as e:
+                    debug_display(
+                        self._notify_window, DebugEvent.DISPLAY_ERROR, "try %d - failed to connect: %s" % (i + 1, e))
+            if not connected:
                 debug_display(
-                    self._notify_window, DebugEvent.DISPLAY_ERROR, "Failed to connect: %s" % e)
-                self.State = 0
+                    self._notify_window, DebugEvent.DISPLAY_ERROR, "Exhausted connection attempts.")
                 return None
 
             self.PortName = portnum
@@ -136,8 +144,6 @@ class OBDPort:
             except serial.SerialException as e:
                 debug_display(
                     self._notify_window, DebugEvent.DISPLAY_ERROR, "Failed to connect: %s" % e)
-                self.State = 0
-                return None
 
             self.PortName = self._port.name
 
@@ -146,22 +152,22 @@ class OBDPort:
         debug_display(self._notify_window,
                       DebugEvent.DISPLAY_DEBUG, "Connecting to ECU...")
 
+        self.State = 1
         try:
-            self.send_command("ATZ", wait_response = True)   # initialize
-            time.sleep(1)
+            self.send_command("ATZ")  # initialize
         except IOError as e:
             debug_display(self._notify_window, 2,
                           "failed to send atz (%s)" % e)
-            self.State = 0
             return None
 
+        # Disable command echo - we don't need it.
         self.enable_echo(False)
 
+        # Verify the ELM327 version
         self.ELMver = self.send_command("ATI")
-        if(self.ELMver is None):
-            debug_display(self._notify_window,
-                          DebugEvent.DISPLAY_ERROR, "no ELMVer returned")
-            self.State = 0
+        if self.ELMver[0:6] != 'ELM327':
+            debug_display(self._notify_window, DebugEvent.DISPLAY_DEBUG,
+                          "Invalid ELM327 version \"%s\" returned" % self.ELMver)
             return None
 
         initial_protocol = 0  # Automatic search
@@ -171,7 +177,6 @@ class OBDPort:
         if res != 'OK':
             debug_display(self._notify_window, DebugEvent.DISPLAY_ERROR,
                           "Failed to select protocol 6")
-            self.State = 0
             return None
 
         # Query available PIDs
@@ -210,10 +215,11 @@ class OBDPort:
                     return None
 
         if not ready:
-            debug_display(self._notify_window, 2, "Failed to connect to ECU (is the car on?)")
-            self.State = 0
+            debug_display(self._notify_window, 2,
+                          "Failed to connect to ECU (is the car on?)")
             return None
 
+        # Now connected
         self.State = 1
 
         debug_display(self._notify_window, DebugEvent.DISPLAY_DEBUG,
@@ -222,7 +228,7 @@ class OBDPort:
                       DebugEvent.DISPLAY_DEBUG, "0100 response: " + res)
         return None
 
-    def close(self, reset = True):
+    def close(self, reset=True):
         """ Resets device and closes all associated filehandles"""
 
         # Reset device
@@ -239,12 +245,12 @@ class OBDPort:
         self.ELMver = "Unknown"
         self.PortName = "Unknown"
 
-    def send_command(self, cmd, wait_response = True):
+    def send_command(self, cmd, wait_response=True):
         """Sends a command and waits for a response"""
         self.send_raw(cmd + b"\r\n")
         if wait_response:
             return self.recv_result()
-        
+
         return None
 
     def send_raw(self, data):
@@ -271,15 +277,22 @@ class OBDPort:
         if self.State != 1:
             raise IOError("Not connected")
 
+        data = ''
         if self._port != None:
-            return self._port.read(len)
+            data = self._port.read(len)
         elif self._sock != None:
-            return self._sock.recv(len)
+            data = self._sock.recv(len)
+        
+        # raise an IOError if we lost connection
+        #if len(data) == 0:
+        #    raise IOError("Connection to port lost.")
 
-        return None
+        return data
 
     def recv_data(self):
-        """Receives at least line of data"""
+        """Receives at least line of data
+
+        raises an IOError if connection is lost"""
         lines = []
         # Continously receive until we accumulate a line
         while '\r' not in self._recv_buf:
@@ -293,12 +306,11 @@ class OBDPort:
 
             # Remove the received part from the buffer.
             if len(self._recv_buf) > end:
-                self._recv_buf = self._recv_buf[end+1:]
+                self._recv_buf = self._recv_buf[end + 1:]
             else:
                 self._recv_buf = ''
-        
+
         return lines
-            
 
     def recv_result(self, strip_newlines=True):
         """Internal use only: not a public interface"""
@@ -367,7 +379,7 @@ class OBDPort:
         return self._monitor_mode
 
     def enable_monitor(self, enable):
-        """Puts the ELM327 into monitor mode (or takes it out). Use recv_raw to read data.
+        """Puts the ELM327 into monitor mode (or takes it out). Use recv_data to read data.
 
         When in monitor mode, attempting to use any other functionality is undefined."""
         if enable and not self._monitor_mode:
@@ -377,7 +389,8 @@ class OBDPort:
             self.send_command("ATMA", wait_response=False)  # MA: Monitor All
             self._monitor_mode = True
         elif not enable and self._monitor_mode:
-            self.send_raw("\r")  # any character input will disable monitor mode
+            # any character input (empty command) will disable monitor mode
+            self.send_command('')
             self.send_command("ATCAF1")  # Enable CAN Automatic Formatting
             self._monitor_mode = False
 
@@ -458,7 +471,7 @@ class OBDPort:
         return statusTrans
 
     #
-    # fixme: j1979 specifies that the program should poll until the number
+    # FIXME: j1979 specifies that the program should poll until the number
     # of returned DTCs matches the number indicated by a call to PID 01
     #
     def get_dtc(self):
