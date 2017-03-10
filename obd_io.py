@@ -422,11 +422,11 @@ class OBDPort:
         if monitor_enabled:
             self.enable_monitor(True)
 
-    def interpret_result(self, code):
+    def interpret_result(self, code, data_len):
         """Internal use only: not a public interface"""
         # Code will be the string returned from the device.
         # It should look something like this:
-        # '41 11 0 0\r\r'
+        # '41 11 00 00\r\r'
 
         # 9 seems to be the length of the shortest valid response
         if len(code) < 7:
@@ -437,7 +437,7 @@ class OBDPort:
         code = string.split(code, "\r")
         code = code[0]
 
-        #remove whitespace
+        # remove whitespace
         code = string.split(code)
         code = string.join(code, "")
 
@@ -447,16 +447,26 @@ class OBDPort:
 
         # first 4 characters are code from ELM
         code = code[4:]
+
+        # Some commands can be split into two, e.g.
+        # '41 00 BF 9F B9 93 41 00 98 18 80 11 \r\r'
+        # next data_len characters are part of the command
+        i = data_len * 2
+        while i < len(code):
+            # Strip an identifier
+            code = code[:i] + code[i+4:]
+            i += 4 + data_len * 2
+
         return code
 
     # get sensor value from command
     def get_sensor_value(self, sensor):
         """Internal use only: not a public interface"""
-        cmd = sensor.cmd
-        data = self.send_command(cmd)
+        command = "01%.2X" % sensor.id
+        data = self.send_command(command)
 
         if data:
-            data = self.interpret_result(data)
+            data = self.interpret_result(data, sensor.length)
             if data != "NODATA":
                 data = sensor.value(data)
         else:
@@ -468,7 +478,10 @@ class OBDPort:
     def sensor(self, sensor_index):
         """Returns 3-tuple of given sensors. 3-tuple consists of
         (Sensor Name (string), Sensor Value (string), Sensor Unit (string) ) """
-        sensor = obd_sensors.SENSORS[sensor_index]
+        sensor = obd_sensors.get_sensor(sensor_index)
+        if sensor == None:
+            return None
+
         r = self.get_sensor_value(sensor)
         return (sensor.name, r, sensor.unit)
 
@@ -503,19 +516,41 @@ class OBDPort:
     # of returned DTCs matches the number indicated by a call to PID 01
     #
     def get_dtc(self):
-         """Returns a list of all pending DTC codes. Each element consists of
-         a 2-tuple: (DTC code (string), Code description (string) )"""
-         dtcLetters = ["P", "C", "B", "U"]
-         r = self.sensor(1)[1]  # data
-         dtcNumber = r[0]
-         mil = r[1]
-         DTCCodes = []
+        """Returns a list of all pending DTC codes. Each element consists of
+        a 2-tuple: (DTC code (string), Code description (string) )"""
+        dtcLetters = ["P", "C", "B", "U"]
+        r = self.sensor(1)[1]  # data
+        dtcNumber = r[0]
+        mil = r[1]
+        DTCCodes = []
 
-         print "Number of stored DTC: " + str(dtcNumber) + " MIL: " + str(mil)
-         # get all DTC, 3 per mesg response
-         for i in range(0, ((dtcNumber + 2) / 3)):
-           res = self.send_command(GET_DTC_COMMAND)
-           print "DTC result: " + res
+        print "Number of stored DTC: " + str(dtcNumber) + " MIL: " + (mil and "Active" or "Inactive")
+        # get all DTC, 3 per mesg response
+        for i in range(0, ((dtcNumber + 2) / 3)):
+          res = self.send_command(GET_DTC_COMMAND)
+          print "DTC result: " + res
+          for i in range(0, 3):
+              val1 = hex_to_int(res[3 + i * 6:5 + i * 6])
+              # get DTC codes from response (3 DTC each 2 bytes)
+              val2 = hex_to_int(res[6 + i * 6:8 + i * 6])
+              val = (val1 << 8) + val2  # DTC val as int
+
+              if val == 0:  # skip fill of last packet
+                break
+
+              DTCStr = dtcLetters[(val & 0xC000) > 14] + str((val & 0x3000) >> 12) + str(
+                  (val & 0x0f00) >> 8) + str((val & 0x00f0) >> 4) + str(val & 0x000f)
+
+              DTCCodes.append(["Active", DTCStr])
+
+        if dtcNumber > 0:
+           # read mode 7
+           res = self.send_command(GET_FREEZE_DTC_COMMAND)
+
+           if res[:7] == "NODATA":  # no freeze frame
+               return DTCCodes
+
+           print "DTC freeze result: " + res
            for i in range(0, 3):
                val1 = hex_to_int(res[3 + i * 6:5 + i * 6])
                # get DTC codes from response (3 DTC each 2 bytes)
@@ -523,34 +558,13 @@ class OBDPort:
                val = (val1 << 8) + val2  # DTC val as int
 
                if val == 0:  # skip fill of last packet
-                 break
+                   break
 
                DTCStr = dtcLetters[(val & 0xC000) > 14] + str((val & 0x3000) >> 12) + str(
                    (val & 0x0f00) >> 8) + str((val & 0x00f0) >> 4) + str(val & 0x000f)
+               DTCCodes.append(["Passive", DTCStr])
 
-               DTCCodes.append(["Active", DTCStr])
-
-         #read mode 7
-         res = self.send_command(GET_FREEZE_DTC_COMMAND)
-
-         if res[:7] == "NODATA":  # no freeze frame
-           return DTCCodes
-
-         print "DTC freeze result:" + res
-         for i in range(0, 3):
-             val1 = hex_to_int(res[3 + i * 6:5 + i * 6])
-             # get DTC codes from response (3 DTC each 2 bytes)
-             val2 = hex_to_int(res[6 + i * 6:8 + i * 6])
-             val = (val1 << 8) + val2  # DTC val as int
-
-             if val == 0:  # skip fill of last packet
-               break
-
-             DTCStr = dtcLetters[(val & 0xC000) > 14] + str((val & 0x3000) >> 12) + str(
-                 (val & 0x0f00) >> 8) + str((val & 0x00f0) >> 4) + str(val & 0x000f)
-             DTCCodes.append(["Passive", DTCStr])
-
-         return DTCCodes
+        return DTCCodes
 
     def clear_dtc(self):
         """Clears all DTCs and freeze frame data"""

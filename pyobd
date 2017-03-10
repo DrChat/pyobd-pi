@@ -216,40 +216,55 @@ class MyApp(wx.App):
                     for i in range(3, len(self.active)):
                         if self.active[i]:
                             s = self.port.sensor(i)
-                            wx.PostEvent(self._notify_window, ResultEvent(
-                                [i, 2, "%s (%s)" % (s[1], s[2])]))
+                            if s != None:
+                                # value
+                                disp = "%s" % s[1]
+
+                                # units
+                                if s[2] != '':
+                                    disp += " %s" % s[2]
+
+                                wx.PostEvent(self._notify_window, ResultEvent(
+                                    [i, 2, "%s (%s)" % (s[1], s[2])]))
 
                         # exit
                         if self._notify_window.ThreadControl == 666:
                             break
                 elif curtab == MyApp.TAB_DTC:  # show DTC tab
-                  if self._notify_window.ThreadControl == 1:  # clear DTC
-                      self.port.clear_dtc()
+                    if self._notify_window.ThreadControl == 1:  # clear DTC
+                        self.port.clear_dtc()
 
-                      # before reset ThreadControl we must check if main thread
-                      # did not want us to finish
-                      if self._notify_window.ThreadControl == 666:
-                          break
+                        # before reset ThreadControl we must check if main thread
+                        # did not want us to finish
+                        if self._notify_window.ThreadControl == 666:
+                            break
 
-                      self._notify_window.ThreadControl = 0
-                      prevtab = -1  # to reread DTC
-                  if self._notify_window.ThreadControl == 2:  # reread DTC
-                      prevtab = -1
+                        self._notify_window.ThreadControl = 0
+                        prevtab = -1  # to reread DTC
+                    if self._notify_window.ThreadControl == 2:  # reread DTC
+                        prevtab = -1
 
-                      if self._notify_window.ThreadControl == 666:
-                          break
+                        if self._notify_window.ThreadControl == 666:
+                            break
 
-                      self._notify_window.ThreadControl = 0
-                  if prevtab != 3:
-                    wx.PostEvent(self._notify_window,
-                                 DTCEvent(0))  # clear list
-                    DTCCodes = self.port.get_dtc()
-                    if len(DTCCodes) == 0:
-                      wx.PostEvent(self._notify_window, DTCEvent(
-                          ["", "", "No DTC codes (codes cleared)"]))
-                    for i in range(0, len(DTCCodes)):
-                      wx.PostEvent(self._notify_window, DTCEvent(
-                          [DTCCodes[i][1], DTCCodes[i][0], pcodes[DTCCodes[i][1]]]))
+                        self._notify_window.ThreadControl = 0
+                        
+                    # Update DTC List Again
+                    if prevtab != 3:
+                        wx.PostEvent(self._notify_window,
+                                    DTCEvent(0))  # clear list
+                        DTCCodes = self.port.get_dtc()
+                        if len(DTCCodes) == 0:
+                            wx.PostEvent(self._notify_window, DTCEvent(
+                                ["", "", "No DTC codes (codes cleared)"]))
+                        
+                        for i in range(0, len(DTCCodes)):
+                            translated_code = "Unknown"
+                            if DTCCodes[i][1] in pcodes:
+                                translated_code = pcodes[DTCCodes[i][1]]
+
+                            wx.PostEvent(self._notify_window, DTCEvent(
+                                [DTCCodes[i][1], DTCCodes[i][0], translated_code]))
                 elif curtab == MyApp.TAB_MONITOR:
                     # Enter monitor mode (while 1)
                     if self._notify_window.ThreadControl == 1:
@@ -639,7 +654,8 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
 
     def OnResult(self, event):
         # Sanity check
-        if event.data[0] > self.sensors.GetItemCount():
+        if event.data[0] >= self.sensors.GetItemCount():
+            print "Received data for sensor %d, above our maximum sensor of %d" % (event.data[0], self.sensors.GetItemCount())
             return
 
         self.sensors.SetStringItem(event.data[0], event.data[1], event.data[2])
@@ -805,7 +821,7 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
             ports.append("No ports found")
             found_ports = False
 
-        rb = wx.RadioBox(diag, id, "Choose Serial Port",
+        rb = wx.RadioBox(diag, id, "Choose Serial/Bluetooth Port",
                          choices=ports, style=wx.RA_SPECIFY_COLS,
                          majorDimension=2)
         if found_ports == False:
