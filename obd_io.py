@@ -107,6 +107,7 @@ class OBDPort:
 
         # state SERIAL is 1 connected, 0 disconnected (connection failed)
         self.State = 0
+        self.Error = None
         self._port = None
         self._sock = None
         self._echo_enabled = True  # enabled by default
@@ -126,6 +127,7 @@ class OBDPort:
                     connected = True
                     break
                 except IOError as e:
+                    self.Error = str(e)
                     debug_display(
                         self._notify_window, DebugEvent.DISPLAY_ERROR, "try %d - failed to connect: %s" % (i + 1, e))
             if not connected:
@@ -142,6 +144,7 @@ class OBDPort:
                 self._port = serial.Serial(portnum, baud,
                                            parity=par, stopbits=sb, bytesize=databits, timeout=to)
             except serial.SerialException as e:
+                self.Error = str(e)
                 debug_display(
                     self._notify_window, DebugEvent.DISPLAY_ERROR, "Failed to connect: %s" % e)
 
@@ -249,8 +252,13 @@ class OBDPort:
         """Sends a command and waits for a response"""
         self.send_raw(cmd + b"\r\n")
         if wait_response:
-            return self.recv_result()
+            res = self.recv_result()
+            debug_display(self._notify_window, DebugEvent.DISPLAY_DEBUG,
+                          "cmd: \"%s\" -> \"%s\"" % (cmd, res.replace('\r', '\\r')))
+            return res
 
+        debug_display(self._notify_window,
+                      DebugEvent.DISPLAY_DEBUG, "cmd: \"%s\"" % cmd)
         return None
 
     def send_raw(self, data):
@@ -313,7 +321,9 @@ class OBDPort:
         return lines
 
     def recv_result(self, strip_newlines=True):
-        """Internal use only: not a public interface"""
+        """Internal use only: not a public interface
+        
+        Retrieves the result of a command"""
         #time.sleep(0.01)
         repeat_count = 0
         if self._port is not None:
@@ -393,6 +403,24 @@ class OBDPort:
             self.send_command('')
             self.send_command("ATCAF1")  # Enable CAN Automatic Formatting
             self._monitor_mode = False
+
+    def monitor_set_filter(self, id):
+        """Filter monitor messages to just a certain ID (or IDs) (X is wildcard character)
+
+        Pass None as id to disable."""
+        monitor_enabled = self._monitor_mode
+        if monitor_enabled:
+            # Disable monitor mode for now
+            self.enable_monitor(False)
+
+        # Set filter to ID
+        res = self.send_command('ATCRA' + (id is None and '' or ' ' + id))
+        if res != 'OK':
+            print("Failed to set CAN filter as " + id)
+
+        # Re-enable the monitor if it was enabled.
+        if monitor_enabled:
+            self.enable_monitor(True)
 
     def interpret_result(self, code):
         """Internal use only: not a public interface"""

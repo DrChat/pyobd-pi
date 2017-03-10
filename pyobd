@@ -162,7 +162,7 @@ class MyApp(wx.App):
 
             if self.port.State == 0:  # Cant open serial port
                 self.port.close()
-                return None
+                return self.port.Error
 
             self.active = []
             self.supp = self.port.sensor(0)[1]  # read supported PIDS
@@ -173,25 +173,25 @@ class MyApp(wx.App):
             wx.PostEvent(self._notify_window, DebugEvent(
                 [1, "Communication initialized..."]))
 
-            #for i in range(1, len(self.supp)):
-            #    if self.supp[i - 1] == "1":  # put X in coloum if PID is supported
-            #        self.active.append(1)
-            #        wx.PostEvent(self._notify_window, ResultEvent([i, 0, "X"]))
-            #    else:
-            #        self.active.append(0)
-            #        wx.PostEvent(self._notify_window, ResultEvent([i, 0, ""]))
+            for i in range(1, len(self.supp)):
+                if self.supp[i - 1] == "1":  # put X in coloum if PID is supported
+                    self.active.append(1)
+                    wx.PostEvent(self._notify_window, ResultEvent([i, 0, "X"]))
+                else:
+                    self.active.append(0)
+                    wx.PostEvent(self._notify_window, ResultEvent([i, 0, ""]))
             return "OK"
 
         def run(self):
             wx.PostEvent(self._notify_window, StatusEvent(
                 [0, 1, "Connecting...."]))
-            self.initCommunication()
+            status = self.initCommunication()
             if self.port.State == 0:  # cant connect, exit thread
               self.stop()
               # signal apl, that communication was disconnected
               wx.PostEvent(self._notify_window, StatusEvent([-1]))
               wx.PostEvent(self._notify_window, StatusEvent(
-                  [0, 1, "Error cant connect..."]))
+                  [0, 1, "Could not connect: %s" % status]))
               return None
 
             # tell the application that we're connected
@@ -477,7 +477,7 @@ class MyApp(wx.App):
         #print platform.system()
         #print platform.mac_ver()[]
 
-        if "OS" in os.environ.keys():  # runnig under windows
+        if "OS" in os.environ.keys():  # running under windows
           self.configfilepath = "pyobd.ini"
         else:
           self.configfilepath = os.environ['HOME'] + '/.pyobdrc'
@@ -510,7 +510,7 @@ class MyApp(wx.App):
         self.status.Append(["Link State", "Disconnnected"])
         self.status.Append(["Protocol", "---"])
         self.status.Append(["Cable version", "---"])
-        self.status.Append(["COM port", self.COMPORT])
+        self.status.Append(["COM/BT port", self.COMPORT])
 
         # These pages are dependent on the ordering at the top of this class!
         self.nb.AddPage(self.status, "Status")
@@ -542,11 +542,11 @@ class MyApp(wx.App):
         self.filemenu.Append(ID_EXIT, "E&xit", " Terminate the program")
 
         self.settingmenu = wx.Menu()
-        self.settingmenu.Append(ID_CONFIG, "Configure", " Configure pyOBD")
-        self.settingmenu.Append(ID_RESET, "Connect",
+        self.settingmenu.Append(ID_CONFIG, "Con&figure", " Configure pyOBD")
+        self.settingmenu.Append(ID_RESET, "&Connect",
                                 " Reopen and connect to device")
         self.settingmenu.Append(
-            ID_DISCONNECT, "Disconnect", "Close connection to device")
+            ID_DISCONNECT, "&Disconnect", "Close connection to device")
 
         self.dtcmenu = wx.Menu()
         # tady toto nastavi automaticky tab DTC a provede akci

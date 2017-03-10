@@ -135,11 +135,11 @@ class Sensor:
         self.unit = u
 
 SENSORS = [
-    Sensor("pids"                  , "Supported PIDs"				, "0100" , hex_to_bitstring ,""       ), 
-    Sensor("dtc_status"            , "S-S DTC Cleared"				, "0101" , dtc_decrypt      ,""       ),    
-    Sensor("dtc_ff"                , "DTC C-F-F"					, "0102" , cpass            ,""       ),      
+    Sensor("pids"                  , "Supported PIDs"				, "0100" , hex_to_bitstring ,""       ),
+    Sensor("dtc_status"            , "S-S DTC Cleared"				, "0101" , dtc_decrypt      ,""       ),
+    Sensor("dtc_ff"                , "DTC C-F-F"					, "0102" , cpass            ,""       ),
     Sensor("fuel_status"           , "Fuel System Stat"				, "0103" , cpass            ,""       ),
-    Sensor("load"                  , "Calc Load Value"				, "01041", percent_scale    ,""       ),    
+    Sensor("load"                  , "Calc Load Value"				, "01041", percent_scale    ,""       ),
     Sensor("temp"                  , "Coolant Temp"					, "0105" , temp             ,"F"      ),
     Sensor("short_term_fuel_trim_1", "S-T Fuel Trim"				, "0106" , fuel_trim_percent,"%"      ),
     Sensor("long_term_fuel_trim_1" , "L-T Fuel Trim"				, "0107" , fuel_trim_percent,"%"      ),
