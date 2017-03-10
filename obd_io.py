@@ -422,7 +422,7 @@ class OBDPort:
         if monitor_enabled:
             self.enable_monitor(True)
 
-    def interpret_result(self, code, data_len):
+    def interpret_result(self, code, data_len, arrayed=False):
         """Internal use only: not a public interface"""
         # Code will be the string returned from the device.
         # It should look something like this:
@@ -450,19 +450,25 @@ class OBDPort:
 
         # Some commands can be split into two, e.g.
         # '41 00 BF 9F B9 93 41 00 98 18 80 11 \r\r'
-        # next data_len characters are part of the command
-        i = data_len * 2
-        while i < len(code):
-            # Strip an identifier
-            code = code[:i] + code[i+4:]
-            i += 4 + data_len * 2
+        # If specified, we'll split the code on each boundary.
+        res = []
+        res.append(code[:data_len * 2])
+        if arrayed:
+            i = data_len * 2
+            while i < len(code):
+                # Append more data
+                res.append(code[i+4:i+4 + (data_len * 2)])
+                i += 4 + data_len * 2
+            
+            return res
 
-        return code
+        # Return just the first result.
+        return res[0]
 
     # get sensor value from command
     def get_sensor_value(self, sensor):
         """Internal use only: not a public interface"""
-        command = "01%.2X" % sensor.id
+        command = "01%.2X" % (sensor.id & 0xFF)
         data = self.send_command(command)
 
         if data:

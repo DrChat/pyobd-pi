@@ -224,8 +224,7 @@ class MyApp(wx.App):
                                 if s[2] != '':
                                     disp += " %s" % s[2]
 
-                                wx.PostEvent(self._notify_window, ResultEvent(
-                                    [i, 2, "%s (%s)" % (s[1], s[2])]))
+                                wx.PostEvent(self._notify_window, ResultEvent([i, 2, disp]))
 
                         # exit
                         if self._notify_window.ThreadControl == 666:
