@@ -182,7 +182,9 @@ class MyApp(wx.App):
                 [1, "Communication initialized..."]))
 
             for i in range(0, len(self.supp)):
-                if self.supp[i] == "1":  # put X in column if PID is supported
+                has_sensor = obd_io.obd_sensors.get_sensor(i) != None
+                # put X in column if PID is supported
+                if self.supp[i] == "1" and has_sensor:
                     self.active.append(1)
                     wx.PostEvent(self._notify_window, ResultEvent([i, 0, "X"]))
                 else:
