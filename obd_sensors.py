@@ -136,7 +136,7 @@ class Sensor:
         self.unit   = u
 
 SENSORS = [
-    Sensor("pids"                  , "Supported PIDs"				, 0x00, 4, hex_to_bitstring ,""       ),
+    Sensor("pids_00"               , "Supported PIDs [1-32]"    	, 0x00, 4, hex_to_bitstring ,""       ),
     Sensor("dtc_status"            , "S-S DTC Cleared"				, 0x01, 4, dtc_decrypt      ,""       ),
     Sensor("dtc_ff"                , "DTC C-F-F"					, 0x02, 2, cpass            ,""       ),
     Sensor("fuel_status"           , "Fuel System Stat"				, 0x03, 2, cpass            ,""       ),
@@ -168,6 +168,10 @@ SENSORS = [
     Sensor("o2_sensor_position_b"  , "Loc of O2 sensor" 			, 0x1D, 1, cpass            ,""       ),
     Sensor("aux_input"             , "Aux input status"				, 0x1E, 1, cpass            ,""       ),
     Sensor("engine_time"           , "Engine Start MIN"				, 0x1F, 2, sec_to_min       ,"min"    ),
+    # 0x20 = PIDs supported [0x21 - 0x40]
+    Sensor("pids_20"               , "Supported PIDs [33-64]"    	, 0x20, 4, hex_to_bitstring ,""       ),
+    # Sensor("mil_distance"          , "Distance traveled with MIL"   , 0x21, 2, None             ,"km"     ),
+    Sensor("fuel_level"            , "Fuel tank level input"		, 0x2F, 1, percent_scale    ,"%"      ),
     Sensor("engine_mil_time"       , "Engine Run MIL"				, 0x4D, 2, sec_to_min       ,"min"    ),
     ]
      

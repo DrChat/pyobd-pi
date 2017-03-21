@@ -171,6 +171,7 @@ class OBDPort:
         if self.ELMver[0:6] != 'ELM327':
             debug_display(self._notify_window, DebugEvent.DISPLAY_DEBUG,
                           "Invalid ELM327 version \"%s\" returned" % self.ELMver)
+            self.Error = "Invalid ELM327 version \"%s\" returned" % self.ELMver
             return None
 
         initial_protocol = 0  # Automatic search
@@ -218,8 +219,9 @@ class OBDPort:
                     return None
 
         if not ready:
-            debug_display(self._notify_window, 2,
-                          "Failed to connect to ECU (is the car on?)")
+            self.Error = "Failed to connect to ECU (is the car on?)"
+            self.State = 0
+            self.close()
             return None
 
         # Now connected
@@ -238,9 +240,9 @@ class OBDPort:
         if reset and self.State == 1:
             self.send_command("ATZ")
 
-        if (self._port != None) and self.State == 1:
+        if (self._port != None):
             self._port.close()
-        elif (self._sock != None) and self.State == 1:
+        elif (self._sock != None):
             self._sock.close()
 
         self._port = None
@@ -255,6 +257,9 @@ class OBDPort:
             res = self.recv_result()
             debug_display(self._notify_window, DebugEvent.DISPLAY_DEBUG,
                           "cmd: \"%s\" -> \"%s\"" % (cmd, res.replace('\r', '\\r')))
+            if res == "CAN ERROR":
+                raise IOError("Disconnected from CAN bus")
+
             return res
 
         debug_display(self._notify_window,
@@ -378,11 +383,18 @@ class OBDPort:
            debug_display(self._notify_window, 3, "NO connection!")
         return None
 
+    def enable_headers(self, enable):
+        """Internal use only: Not a public interface"""
+        result = self.send_command("ATH%d" % (
+            enable and 1 or 0))  # Disable headers
+        if 'OK' in result:
+            self._headers_enabled = enable
+
     def enable_echo(self, enable):
         """Internal use only: not a public interface"""
         result = self.send_command("ATE%d" % (
             enable and 1 or 0))  # toggle echo
-        if 'OK' in result:
+        if 'OK' == result:
             self._echo_enabled = enable
 
     def is_monitoring(self):
@@ -393,7 +405,7 @@ class OBDPort:
 
         When in monitor mode, attempting to use any other functionality is undefined."""
         if enable and not self._monitor_mode:
-            self.send_command("ATH1")  # Enable headers
+            self.enable_headers(True)  # Enable headers
             self.send_command("ATAL")  # Allow long messages
             self.send_command("ATCAF0")  # Disable CAN Automatic Formatting
             self.send_command("ATMA", wait_response=False)  # MA: Monitor All
@@ -402,6 +414,7 @@ class OBDPort:
             # any character input (empty command) will disable monitor mode
             self.send_command('')
             self.send_command("ATCAF1")  # Enable CAN Automatic Formatting
+            self.enable_headers(False)  # Disable headers
             self._monitor_mode = False
 
     def monitor_set_filter(self, id):

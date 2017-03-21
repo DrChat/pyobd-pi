@@ -165,16 +165,24 @@ class MyApp(wx.App):
                 return self.port.Error
 
             self.active = []
-            self.supp = self.port.sensor(0)[1]  # read supported PIDS
+            self.supp = '1'  # PID 00 always supported
+            self.supp += self.port.sensor(0x00)[1]  # read supported PIDS
 
-            self.active.append(1)  # PID 0 is always supported
+            if self.supp[-1:] == '1':
+                self.supp += self.port.sensor(0x20)[1]
+            if self.supp[-1:] == '1':
+                self.supp += self.port.sensor(0x40)[1]
+            if self.supp[-1:] == '1':
+                self.supp += self.port.sensor(0x60)[1]
+            if self.supp[-1:] == '1':
+                self.supp += self.port.sensor(0x80)[1]
 
             wx.PostEvent(self._notify_window, ResultEvent([0, 0, "X"]))
             wx.PostEvent(self._notify_window, DebugEvent(
                 [1, "Communication initialized..."]))
 
-            for i in range(1, len(self.supp)):
-                if self.supp[i - 1] == "1":  # put X in coloum if PID is supported
+            for i in range(0, len(self.supp)):
+                if self.supp[i] == "1":  # put X in column if PID is supported
                     self.active.append(1)
                     wx.PostEvent(self._notify_window, ResultEvent([i, 0, "X"]))
                 else:
@@ -385,6 +393,7 @@ class MyApp(wx.App):
         panel = wx.Panel(self.nb, -1)
         sizer = wx.BoxSizer(wx.VERTICAL)
 
+        self.sensor_map = {}
         self.sensors = self.MyListCtrl(panel, tID,
                                        style=wx.LC_REPORT |
                                        wx.SUNKEN_BORDER |
@@ -398,6 +407,9 @@ class MyApp(wx.App):
         self.sensors.InsertColumn(2, "Value")
         for i in range(0, len(obd_io.obd_sensors.SENSORS)):
             s = obd_io.obd_sensors.SENSORS[i].name
+            id = obd_io.obd_sensors.SENSORS[i].id
+            self.sensor_map[id] = i
+
             self.sensors.InsertStringItem(i, "")
             self.sensors.SetStringItem(i, 1, s)
 
@@ -557,10 +569,10 @@ class MyApp(wx.App):
 
         self.settingmenu = wx.Menu()
         self.settingmenu.Append(ID_CONFIG, "Con&figure", " Configure pyOBD")
-        self.settingmenu.Append(ID_RESET, "&Connect",
+        self.settingmenu.Append(ID_RESET, "&Connect\tF2",
                                 " Reopen and connect to device")
         self.settingmenu.Append(
-            ID_DISCONNECT, "&Disconnect", "Close connection to device")
+            ID_DISCONNECT, "&Disconnect\tF3", "Close connection to device")
 
         self.dtcmenu = wx.Menu()
         # tady toto nastavi automaticky tab DTC a provede akci
@@ -599,6 +611,11 @@ class MyApp(wx.App):
         frame.Bind(wx.EVT_MENU, self.OnHelpAbout, id=ID_HELP_ABOUT)
         frame.Bind(wx.EVT_MENU, self.OnHelpVisit, id=ID_HELP_VISIT)
         frame.Bind(wx.EVT_MENU, self.OnHelpOrder, id=ID_HELP_ORDER)
+
+        # Accelerators
+        accel_table = wx.AcceleratorTable(
+            [(wx.ACCEL_NORMAL, wx.WXK_F2, ID_RESET), (wx.ACCEL_NORMAL, wx.WXK_F3, ID_DISCONNECT)])
+        frame.SetAcceleratorTable(accel_table)
 
         self.SetTopWindow(frame)
 
@@ -653,11 +670,12 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
 
     def OnResult(self, event):
         # Sanity check
-        if event.data[0] >= self.sensors.GetItemCount():
-            print "Received data for sensor %d, above our maximum sensor of %d" % (event.data[0], self.sensors.GetItemCount())
+        if event.data[0] not in self.sensor_map:
+            print "Warning: Received data for unsupported sensor %d" % event.data[0]
             return
 
-        self.sensors.SetStringItem(event.data[0], event.data[1], event.data[2])
+        self.sensors.SetStringItem(
+            self.sensor_map[event.data[0]], event.data[1], event.data[2])
 
     def OnStatus(self, event):
         # control event
