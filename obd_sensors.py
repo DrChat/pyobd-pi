@@ -172,7 +172,10 @@ SENSORS = [
     Sensor("pids_20"               , "Supported PIDs [33-64]"    	, 0x20, 4, hex_to_bitstring ,""       ),
     # Sensor("mil_distance"          , "Distance traveled with MIL"   , 0x21, 2, None             ,"km"     ),
     Sensor("fuel_level"            , "Fuel tank level input"		, 0x2F, 1, percent_scale    ,"%"      ),
+    Sensor("pids_40"               , "Supported PIDs [65-96]"    	, 0x40, 4, hex_to_bitstring ,""       ),
     Sensor("engine_mil_time"       , "Engine Run MIL"				, 0x4D, 2, sec_to_min       ,"min"    ),
+    Sensor("pids_60"               , "Supported PIDs [97-128]"    	, 0x60, 4, hex_to_bitstring ,""       ),
+    Sensor("pids_80"               , "Supported PIDs [129-160]"    	, 0x80, 4, hex_to_bitstring ,""       ),
     ]
      
 def get_sensor(id):

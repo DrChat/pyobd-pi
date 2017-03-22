@@ -234,7 +234,8 @@ class MyApp(wx.App):
                                 if s[2] != '':
                                     disp += " %s" % s[2]
 
-                                wx.PostEvent(self._notify_window, ResultEvent([i, 2, disp]))
+                                wx.PostEvent(self._notify_window,
+                                             ResultEvent([i, 2, disp]))
 
                         # exit
                         if self._notify_window.ThreadControl == 666:
@@ -257,16 +258,16 @@ class MyApp(wx.App):
                             break
 
                         self._notify_window.ThreadControl = 0
-                        
+
                     # Update DTC List Again
                     if prevtab != 3:
                         wx.PostEvent(self._notify_window,
-                                    DTCEvent(0))  # clear list
+                                     DTCEvent(0))  # clear list
                         DTCCodes = self.port.get_dtc()
                         if len(DTCCodes) == 0:
                             wx.PostEvent(self._notify_window, DTCEvent(
                                 ["", "", "No DTC codes (codes cleared)"]))
-                        
+
                         for i in range(0, len(DTCCodes)):
                             translated_code = "Unknown"
                             if DTCCodes[i][1] in pcodes:
@@ -451,6 +452,9 @@ class MyApp(wx.App):
         self.Monitorpanel = wx.Panel(self.nb, -1)
         sizer = wx.BoxSizer(wx.VERTICAL)
 
+        # Maps id -> row
+        self._monitor_map = {}
+
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
         self.BeginMonitorButton = wx.Button(
             self.Monitorpanel, -1, "Begin Monitoring")
@@ -481,7 +485,8 @@ class MyApp(wx.App):
 
         # Columns
         self.monitor.InsertColumn(0, "Time", width=100)
-        self.monitor.InsertColumn(1, "Bytes")
+        self.monitor.InsertColumn(1, "ID")
+        self.monitor.InsertColumn(2, "Bytes")
 
         # Finalization
         self.Monitorpanel.SetSizer(sizer)
@@ -513,10 +518,13 @@ class MyApp(wx.App):
           self.COMPORT = "/dev/ttyACM0"
           self.RECONNATTEMPTS = 5
           self.SERTIMEOUT = 2
+          self.FRAMESIZE = (520, 400)
         else:
           self.COMPORT = self.config.get("pyOBD", "COMPORT")
           self.RECONNATTEMPTS = self.config.getint("pyOBD", "RECONNATTEMPTS")
           self.SERTIMEOUT = self.config.getint("pyOBD", "SERTIMEOUT")
+          self.FRAMESIZE = (self.config.getint("pyOBD", "WINSIZEX"),
+                            self.config.getint("pyOBD", "WINSIZEY"))
 
         frame = wx.Frame(None, -1, "pyOBD-II")
         self.frame = frame
@@ -613,6 +621,7 @@ class MyApp(wx.App):
         frame.Bind(wx.EVT_MENU, self.OnHelpAbout, id=ID_HELP_ABOUT)
         frame.Bind(wx.EVT_MENU, self.OnHelpVisit, id=ID_HELP_VISIT)
         frame.Bind(wx.EVT_MENU, self.OnHelpOrder, id=ID_HELP_ORDER)
+        frame.Bind(wx.EVT_SIZE, self.OnResize)
 
         # Accelerators
         accel_table = wx.AcceleratorTable(
@@ -621,8 +630,8 @@ class MyApp(wx.App):
 
         self.SetTopWindow(frame)
 
+        frame.SetSize((self.FRAMESIZE[0], self.FRAMESIZE[1]))
         frame.Show(True)
-        frame.SetSize((520, 400))
         self.sensor_control_off()
 
         return True
@@ -697,7 +706,25 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
             event.data[0], event.data[1], event.data[2])
 
     def OnMonitorData(self, event):
-        self.monitor.Append(event.data)
+        # data: [id] [8 dwords]
+        text_data = event.data[1]
+        text_data = text_data.split(' ')
+        text_data = text_data[0:9]
+        data = [int(i, 16) for i in text_data]
+
+        id = data[0]
+        self._monitor_data[id] = data[1:]
+
+        display_text = (event.data[0], "%.3X" % id, " ".join(text_data[1:]))
+
+        # [time, data]
+        if id not in self._monitor_map:
+            self._monitor_map[id] = self.monitor.GetItemCount()
+            self.monitor.Append(display_text)
+        else:
+            idx = self._monitor_map[id]
+            self.monitor.SetStringItem(idx, 0, display_text[0])
+            self.monitor.SetStringItem(idx, 2, display_text[2])
 
         # Ensure it's visible
         # TODO: Add a button to disable this
@@ -737,6 +764,7 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
 
     def BeginMonitoring(self, e):
         if self.senprod:
+            self._monitor_data = {}
             self.EndMonitorButton.Enable(True)
             self.nb.SetSelection(MyApp.TAB_MONITOR)
             self.ThreadControl = 1
@@ -746,7 +774,9 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
             self.EndMonitorButton.Enable(False)
             self.ThreadControl = 0
 
-    def ClearMonitor(self, e):
+    def ClearMonitor(self, e=None):
+        self._monitor_data = {}
+        self._monitor_map = {}
         self.monitor.DeleteAllItems()
 
     def SaveMonitor(self, e):
@@ -763,11 +793,12 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
                 self.TraceDebug(3, "Failed to open file %s" % file_path)
                 return
 
-            f.write('Time,Data,\n')
+            f.write('Time,ID,Data,\n')
             for i in range(0, self.monitor.GetItemCount()):
                 time = self.monitor.GetItem(i, 0).GetText()
-                data = self.monitor.GetItem(i, 1).GetText()
-                f.write('"%s","%s",\n' % (time, data))
+                id = self.monitor.GetItem(i, 1).GetText()
+                data = self.monitor.GetItem(i, 2).GetText()
+                f.write('"%s","%s","%s",\n' % (time, id, data))
 
             f.close()
 
@@ -907,7 +938,16 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
             #write configuration to cfg file
             self.config.write(open(self.configfilepath, 'wb'))
 
+    def OnResize(self, e):
+        # e.Size.x/y
+        self.FRAMESIZE = (e.Size.x, e.Size.y)
+        e.Skip()
+
     def OnExit(self, e=None):
+        self.config.set("pyOBD", "WINSIZEX", self.FRAMESIZE[0])
+        self.config.set("pyOBD", "WINSIZEY", self.FRAMESIZE[1])
+        self.config.write(open(self.configfilepath, 'wb'))
+
         self.ThreadControl = 666
         import sys
         sys.exit(0)
