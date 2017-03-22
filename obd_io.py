@@ -412,7 +412,8 @@ class OBDPort:
             self._monitor_mode = True
         elif not enable and self._monitor_mode:
             # any character input (empty command) will disable monitor mode
-            self.send_command('')
+            while "STOPPED" not in self.send_command(''):
+                pass
             self.send_command("ATCAF1")  # Enable CAN Automatic Formatting
             self.enable_headers(False)  # Disable headers
             self._monitor_mode = False
