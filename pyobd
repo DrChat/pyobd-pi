@@ -610,6 +610,10 @@ class MyApp(wx.App):
         # Adding the MenuBar to the Frame content.
         frame.SetMenuBar(self.menuBar)
 
+        # Create a status bar as well
+        self.statusBar = frame.CreateStatusBar()
+        self.statusBar.SetStatusText("Disconnected", 0)
+
         # attach the menu-event ID_EXIT to the
         frame.Bind(wx.EVT_MENU, self.OnExit, id=ID_EXIT)
         frame.Bind(wx.EVT_MENU, self.QueryClear, id=ID_CLEAR)
@@ -693,10 +697,13 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
         if len(event.data) == 1:
             if event.data[0] == -1:  # signal, that connection failed
                 self.sensor_control_off()
+                self.statusBar.SetStatusText("Connection Failed", 0)
             elif event.data[0] == 0:  # disconnected
                 self.sensor_control_off()
+                self.statusBar.SetStatusText("Disconnected", 0)
             elif event.data[0] == 1:  # connected
                 self.sensor_control_on()
+                self.statusBar.SetStatusText("Connected", 0)
         else:
             self.status.SetStringItem(
                 event.data[0], event.data[1], event.data[2])
@@ -746,6 +753,8 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
     def OpenPort(self, e):
         if self.senprod:  # signal current producers to finish
             self.senprod.stop()
+        
+        self.statusBar.SetStatusText("Connecting...", 0)
         self.ThreadControl = 0
         self.senprod = self.sensorProducer(
             self, self.COMPORT, self.SERTIMEOUT, self.RECONNATTEMPTS, self.nb)
