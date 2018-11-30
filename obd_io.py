@@ -45,9 +45,9 @@ except ImportError as e:
 
 
 
-GET_DTC_COMMAND = "03"  # Mode 03 (no PID)
-CLEAR_DTC_COMMAND = "04"  # Mode 04 (no PID)
-GET_FREEZE_DTC_COMMAND = "07"  # Mode 07 (no PID)
+GET_DTC_COMMAND = b"\x03"  # Mode 03 (no PID)
+CLEAR_DTC_COMMAND = b"\x04"  # Mode 04 (no PID)
+GET_PENDING_DTC_COMMAND = b"\x07"  # Mode 07 (no PID)
 
 
 #__________________________________________________________________________
@@ -87,6 +87,36 @@ def decrypt_dtc_code(code):
 def is_mac_address(str):
     # http://stackoverflow.com/questions/7629643/how-do-i-validate-the-format-of-a-mac-address
     return re.match("[0-9a-f]{2}([:])[0-9a-f]{2}(\\1[0-9a-f]{2}){4}$", str.lower())
+
+#__________________________________________________________________________
+
+def is_hex_string(s):
+    encountered_newline = False
+
+    for i in range(0, len(s)):
+        if s[i] in ['\r', '\n']:
+            # Newlines can be skipped (if they are at the end of the string)
+            encountered_newline = True
+            continue
+
+        if encountered_newline:
+            # A newline has been encountered, but the string is not over yet. Spit it back at the user.
+            return False
+
+        # Check if this is a hex digit or a space character
+        if (i % 3) == 2:
+            # Hex characters separated by a space
+            if s[i] != ' ':
+                return False
+            
+            continue
+        
+        # Check for hex characters.
+        if s[i] not in string.hexdigits:
+            return False
+    
+    # This is a hex string! (including len = 0)
+    return True
 
 #__________________________________________________________________________
 
@@ -264,6 +294,20 @@ class OBDPort:
 
         debug_display(self._notify_window,
                       DebugEvent.DISPLAY_DEBUG, "cmd: \"%s\"" % cmd)
+        return None
+    
+    def send_command_binary(self, cmd, wait_response=True):
+        if type(cmd) != bytearray or type(cmd) != bytes:
+            raise TypeError('cmd must be convertable to bytearray')
+
+        res = self.send_command(' '.join('%02X' % i for i in bytearray(cmd)), wait_response)
+        if wait_response:
+            # Convert the response to binary.
+            if not is_hex_string(res):
+                raise IOError("CAN bus nonbinary response: '%s'" % res)
+            
+            return bytearray.fromhex(res)
+        
         return None
 
     def send_raw(self, data):
@@ -539,56 +583,59 @@ class OBDPort:
         """Returns a list of all pending DTC codes. Each element consists of
         a 2-tuple: (DTC code (string), Code description (string) )"""
         dtcLetters = ["P", "C", "B", "U"]
-        r = self.sensor(1)[1]  # data
-        dtcNumber = r[0]
-        mil = r[1]
         DTCCodes = []
 
-        print "Number of stored DTC: " + str(dtcNumber) + " MIL: " + (mil and "Active" or "Inactive")
+        # Grab the DTC pseudo-sensor
+        r = self.sensor(1)[1]
+        dtcNumber = r[0]
+        mil = r[1]
+
+        print "Number of stored DTC: " + str(dtcNumber) + ", MIL " + (mil and "ACTIVE" or "inactive")
         # get all DTC, 3 per mesg response
         for i in range(0, ((dtcNumber + 2) / 3)):
-          res = self.send_command(GET_DTC_COMMAND)
-          print "DTC result: " + res
-          for i in range(0, 3):
-              val1 = hex_to_int(res[3 + i * 6:5 + i * 6])
-              # get DTC codes from response (3 DTC each 2 bytes)
-              val2 = hex_to_int(res[6 + i * 6:8 + i * 6])
-              val = (val1 << 8) + val2  # DTC val as int
+            res = self.send_command_binary(GET_DTC_COMMAND)
+            for i in range(0, 3):
+                val = (res[i + 1] << 8) | res[i + 2]  # DTC val as int
+                if val == 0:  # skip fill of last packet
+                    break
 
-              if val == 0:  # skip fill of last packet
-                break
+                DTCStr = dtcLetters[(val & 0xC000) >> 14] + \
+                                str((val & 0x3000) >> 12) + \
+                                str((val & 0x0f00) >> 8) + \
+                                str((val & 0x00f0) >> 4) + \
+                                str(val & 0x000f)
 
-              DTCStr = dtcLetters[(val & 0xC000) > 14] + str((val & 0x3000) >> 12) + str(
-                  (val & 0x0f00) >> 8) + str((val & 0x00f0) >> 4) + str(val & 0x000f)
+                DTCCodes.append(["Active", DTCStr])
 
-              DTCCodes.append(["Active", DTCStr])
-
+        # TODO: The following code is broken.
+        # Re-read the datasheets for FREEZE DTC, the ELM327 device is not returning
+        # the expected amount of data (too little data returned)
         if dtcNumber > 0:
-           # read mode 7
-           res = self.send_command(GET_FREEZE_DTC_COMMAND)
+            # read mode 7
+            try:
+                res = self.send_command_binary(GET_PENDING_DTC_COMMAND)
+            except IOError:
+                # Bail, we have our codes.
+                return DTCCodes
 
-           if res[:7] == "NODATA":  # no freeze frame
-               return DTCCodes
+            print "DTC pending result: " + res
+            for i in range(0, 3):
+                val = (res[i + 1] << 8) | res[i + 2]
+                if val == 0:  # skip fill of last packet
+                    break
 
-           print "DTC freeze result: " + res
-           for i in range(0, 3):
-               val1 = hex_to_int(res[3 + i * 6:5 + i * 6])
-               # get DTC codes from response (3 DTC each 2 bytes)
-               val2 = hex_to_int(res[6 + i * 6:8 + i * 6])
-               val = (val1 << 8) + val2  # DTC val as int
-
-               if val == 0:  # skip fill of last packet
-                   break
-
-               DTCStr = dtcLetters[(val & 0xC000) > 14] + str((val & 0x3000) >> 12) + str(
-                   (val & 0x0f00) >> 8) + str((val & 0x00f0) >> 4) + str(val & 0x000f)
-               DTCCodes.append(["Passive", DTCStr])
+                DTCStr = dtcLetters[(val & 0xC000) >> 14] + \
+                                str((val & 0x3000) >> 12) + \
+                                str((val & 0x0f00) >> 8) + \
+                                str((val & 0x00f0) >> 4) + \
+                                str(val & 0x000f)
+                DTCCodes.append(["Passive", DTCStr])
 
         return DTCCodes
 
     def clear_dtc(self):
         """Clears all DTCs and freeze frame data"""
-        return self.send_command(CLEAR_DTC_COMMAND)
+        return self.send_command_binary(CLEAR_DTC_COMMAND)
 
     def log(self, sensor_index, filename):
          file = open(filename, "w")
