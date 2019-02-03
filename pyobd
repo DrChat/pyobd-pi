@@ -23,7 +23,7 @@
 # Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 ############################################################################
 
-import ConfigParser  # safe application configuration
+import configparser  # safe application configuration
 import os  # os.environ
 import platform
 import sys
@@ -366,7 +366,7 @@ class MyApp(wx.App):
         def sensor_toggle(e):
             sel = e.m_itemIndex
             state = self.senprod.active[sel]
-            print sel, state
+            print('%d %d' % (sel, state))
             if state == 0:
                 self.senprod.on(sel)
                 self.sensors.SetStringItem(sel, 1, "1")
@@ -505,7 +505,7 @@ class MyApp(wx.App):
         tID = wx.NewId()
 
         #read settings from file
-        self.config = ConfigParser.RawConfigParser()
+        self.config = configparser.RawConfigParser()
 
         #print platform.system()
         #print platform.mac_ver()[]
@@ -686,7 +686,7 @@ the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  0211
     def OnResult(self, event):
         # Sanity check
         if event.data[0] not in self.sensor_map:
-            print "Warning: Received data for unsupported sensor %d" % event.data[0]
+            print("Warning: Received data for unsupported sensor %d" % event.data[0])
             return
 
         self.sensors.SetStringItem(

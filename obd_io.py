@@ -225,7 +225,7 @@ class OBDPort:
             for i in range(0x1, 0xB):
                 res = self.send_command("ATTP%.1X" % i)
                 if res != 'OK':
-                    print("Unable to select protocol %.1X" % i)
+                    print(("Unable to select protocol %.1X" % i))
                     break
 
                 res = self.send_command("0100")
@@ -382,7 +382,7 @@ class OBDPort:
                 if len(c) == 0:
                    if(repeat_count == 5):
                        break
-                   print "Got nothing\n"
+                   print("Got nothing\n")
                    repeat_count = repeat_count + 1
                    continue
 
@@ -474,7 +474,7 @@ class OBDPort:
         # Set filter to ID
         res = self.send_command('ATCRA' + (id is None and '' or ' ' + id))
         if res != 'OK':
-            print("Failed to set CAN filter as " + id)
+            print(("Failed to set CAN filter as " + id))
 
         # Re-enable the monitor if it was enabled.
         if monitor_enabled:
@@ -489,7 +489,7 @@ class OBDPort:
         # 9 seems to be the length of the shortest valid response
         if len(code) < 7:
             #raise Exception("BogusCode")
-            print "boguscode?" + code
+            print(("boguscode?" + code))
 
         # get the first thing returned, echo should be off
         code = string.split(code, "\r")
@@ -590,7 +590,7 @@ class OBDPort:
         dtcNumber = r[0]
         mil = r[1]
 
-        print "Number of stored DTC: " + str(dtcNumber) + ", MIL " + (mil and "ACTIVE" or "inactive")
+        print(("Number of stored DTC: " + str(dtcNumber) + ", MIL " + (mil and "ACTIVE" or "inactive")))
         # get all DTC, 3 per mesg response
         for i in range(0, ((dtcNumber + 2) / 3)):
             res = self.send_command_binary(GET_DTC_COMMAND)
@@ -618,7 +618,7 @@ class OBDPort:
                 # Bail, we have our codes.
                 return DTCCodes
 
-            print "DTC pending result: " + res
+            print(("DTC pending result: " + res))
             for i in range(0, 3):
                 val = (res[i + 1] << 8) | res[i + 2]
                 if val == 0:  # skip fill of last packet

@@ -30,7 +30,7 @@ try:
     DISPLAY_ERROR = 3
 
     def debug_display(window, position, message):
-        print message
+        print(message)
         if window:
             wx.PostEvent(window, DebugEvent([position, message]))
        
@@ -47,5 +47,5 @@ try:
             self.data = data
 except ImportError as e:
     def debug_display(window, position, message):
-        print message
+        print(message)
     

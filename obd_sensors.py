@@ -106,7 +106,7 @@ def hex_to_bitstring(str):
     bitstring = ''
     for i in str:
         # silly type safety, we don't want to eval random stuff
-        if type(i) == type('') or type(i) == type(u''): 
+        if type(i) == type('') or type(i) == type(''): 
             v = eval("0x%s" % i)
             if v & 8 :
                 bitstring += '1'
@@ -189,7 +189,7 @@ def get_sensor(id):
 
 def test():
     for i in SENSORS:
-        print i.name, i.value("F")
+        print((i.name, i.value("F")))
 
 if __name__ == "__main__":
     test()

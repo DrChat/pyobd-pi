@@ -27,7 +27,7 @@ LOGO_FILENAME 		= "cowfish.png"
 def obd_connect(o):
     while True:
         ports = o.scan_ports()
-        print("Found ports: " + str(ports))
+        print(("Found ports: " + str(ports)))
 
         if o.connect(ports[0]):
             break
@@ -424,49 +424,49 @@ class OBDSettingsFrame ( wx.Frame ):
     OBD settings frame.
     """
 
-	def __init__( self, parent ):
-		wx.Frame.__init__ ( self, parent, id = wx.ID_ANY, title = wx.EmptyString, pos = wx.DefaultPosition, size = wx.Size( 426,113 ), style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL )
-		
-		self.SetSizeHintsSz( wx.DefaultSize, wx.DefaultSize )
-		
-		sizer = wx.BoxSizer( wx.VERTICAL )
-		
-		gSizer1 = wx.GridSizer( 0, 2, 0, 0 )
-		
-		self._lab_iface = wx.StaticText( self, wx.ID_ANY, u"Interfaces:", wx.DefaultPosition, wx.DefaultSize, 0 )
-		self._lab_iface.Wrap( -1 )
-		gSizer1.Add( self._lab_iface, 0, wx.ALL|wx.ALIGN_CENTER_HORIZONTAL|wx.ALIGN_CENTER_VERTICAL, 5 )
-		
-		_choice_ifaceChoices = ["Automatic Selection"]
-		self._choice_iface = wx.Choice( self, wx.ID_ANY, wx.DefaultPosition, wx.Size( -1,-1 ), _choice_ifaceChoices, 0 )
-		self._choice_iface.SetSelection( 0 )
-		gSizer1.Add( self._choice_iface, 1, wx.ALL|wx.EXPAND, 5 )
-		
-		
-		sizer.Add( gSizer1, 0, wx.EXPAND, 5 )
-		
-		
-		sizer.AddSpacer( ( 0, 0), 1, wx.EXPAND, 5 )
-		
-		gSizer2 = wx.GridSizer( 0, 2, 0, 0 )
-		
-		self.btn_scan = wx.Button( self, wx.ID_ANY, u"Scan", wx.DefaultPosition, wx.DefaultSize, 0 )
-		gSizer2.Add( self.btn_scan, 0, wx.ALL, 5 )
-		
-		self.btn_ok = wx.Button( self, wx.ID_ANY, u"OK", wx.DefaultPosition, wx.DefaultSize, 0 )
-		gSizer2.Add( self.btn_ok, 0, wx.ALL, 5 )
-		
-		
-		sizer.Add( gSizer2, 0, wx.ALIGN_CENTER_HORIZONTAL, 5 )
-		
-		
-		self.SetSizer( sizer )
-		self.Layout()
-		
-		self.Centre( wx.BOTH )
-	
-	def __del__( self ):
-		pass
+    def __init__( self, parent ):
+        wx.Frame.__init__ ( self, parent, id = wx.ID_ANY, title = wx.EmptyString, pos = wx.DefaultPosition, size = wx.Size( 426,113 ), style = wx.DEFAULT_FRAME_STYLE|wx.TAB_TRAVERSAL )
+        
+        self.SetSizeHintsSz( wx.DefaultSize, wx.DefaultSize )
+        
+        sizer = wx.BoxSizer( wx.VERTICAL )
+        
+        gSizer1 = wx.GridSizer( 0, 2, 0, 0 )
+        
+        self._lab_iface = wx.StaticText( self, wx.ID_ANY, "Interfaces:", wx.DefaultPosition, wx.DefaultSize, 0 )
+        self._lab_iface.Wrap( -1 )
+        gSizer1.Add( self._lab_iface, 0, wx.ALL|wx.ALIGN_CENTER_HORIZONTAL|wx.ALIGN_CENTER_VERTICAL, 5 )
+        
+        _choice_ifaceChoices = ["Automatic Selection"]
+        self._choice_iface = wx.Choice( self, wx.ID_ANY, wx.DefaultPosition, wx.Size( -1,-1 ), _choice_ifaceChoices, 0 )
+        self._choice_iface.SetSelection( 0 )
+        gSizer1.Add( self._choice_iface, 1, wx.ALL|wx.EXPAND, 5 )
+        
+        
+        sizer.Add( gSizer1, 0, wx.EXPAND, 5 )
+        
+        
+        sizer.AddSpacer( ( 0, 0), 1, wx.EXPAND, 5 )
+        
+        gSizer2 = wx.GridSizer( 0, 2, 0, 0 )
+        
+        self.btn_scan = wx.Button( self, wx.ID_ANY, "Scan", wx.DefaultPosition, wx.DefaultSize, 0 )
+        gSizer2.Add( self.btn_scan, 0, wx.ALL, 5 )
+        
+        self.btn_ok = wx.Button( self, wx.ID_ANY, "OK", wx.DefaultPosition, wx.DefaultSize, 0 )
+        gSizer2.Add( self.btn_ok, 0, wx.ALL, 5 )
+        
+        
+        sizer.Add( gSizer2, 0, wx.ALIGN_CENTER_HORIZONTAL, 5 )
+        
+        
+        self.SetSizer( sizer )
+        self.Layout()
+        
+        self.Centre( wx.BOTH )
+    
+    def __del__( self ):
+        pass
 
 #-------------------------------------------------------------------------------
 
