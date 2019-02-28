@@ -34,6 +34,7 @@ import serial
 import obd_sensors
 from debugEvent import DebugEvent, debug_display
 from obd_sensors import hex_to_int
+from obd_transport import CreateTransport, TransportType
 
 HAS_PYBLUEZ = True
 try:
@@ -138,47 +139,29 @@ class OBDPort:
         # state SERIAL is 1 connected, 0 disconnected (connection failed)
         self.State = 0
         self.Error = None
-        self._port = None
-        self._sock = None
         self._echo_enabled = True  # enabled by default
         self._monitor_mode = False  # flagged if we're in monitor mode
         self._recv_buf = ''
 
         self._notify_window = _notify_window
 
-        if is_mac_address(portnum) and HAS_PYBLUEZ:
+        if is_mac_address(portnum):
             debug_display(self._notify_window, DebugEvent.DISPLAY_DEBUG,
                           "Opening interface (bluetooth RFCOMM)")
-            connected = False
-            for i in range(0, RECONNATTEMPTS):
-                try:
-                    self._sock = bt.BluetoothSocket(bt.RFCOMM)
-                    self._sock.connect((portnum, 1))
-                    connected = True
-                    break
-                except IOError as e:
-                    self.Error = str(e)
-                    debug_display(
-                        self._notify_window, DebugEvent.DISPLAY_ERROR, "try %d - failed to connect: %s" % (i + 1, e))
-            if not connected:
-                debug_display(
-                    self._notify_window, DebugEvent.DISPLAY_ERROR, "Exhausted connection attempts.")
-                return None
-
-            self.PortName = portnum
+            self._transport = CreateTransport(TransportType.BLUETOOTH)
         else:
             debug_display(self._notify_window, DebugEvent.DISPLAY_DEBUG,
                           "Opening interface (serial port)")
+            self._transport = CreateTransport(TransportType.SERIAL)
 
-            try:
-                self._port = serial.Serial(portnum, baud,
-                                           parity=par, stopbits=sb, bytesize=databits, timeout=to)
-            except serial.SerialException as e:
-                self.Error = str(e)
-                debug_display(
-                    self._notify_window, DebugEvent.DISPLAY_ERROR, "Failed to connect: %s" % e)
-
-            self.PortName = self._port.name
+        for i in range(0, RECONNATTEMPTS):
+            if self._transport.Connect(portnum):
+                break
+        
+        if not self._transport.IsConnected():
+            debug_display(self._notify_window, DebugEvent.DISPLAY_ERROR, "Exhausted connection attempts.")
+            self.Error = self._transport.GetErrorString()
+            return None
 
         debug_display(self._notify_window, DebugEvent.DISPLAY_DEBUG,
                       "Interface successfully opened")
@@ -270,19 +253,15 @@ class OBDPort:
         if reset and self.State == 1:
             self.send_command("ATZ")
 
-        if (self._port != None):
-            self._port.close()
-        elif (self._sock != None):
-            self._sock.close()
+        self._transport.Close()
+        self._transport = None
 
-        self._port = None
-        self._sock = None
         self.ELMver = "Unknown"
         self.PortName = "Unknown"
 
     def send_command(self, cmd, wait_response=True):
         """Sends a command and waits for a response"""
-        self.send_raw(cmd + b"\r\n")
+        self.send_raw(cmd + "\r\n")
         if wait_response:
             res = self.recv_result()
             debug_display(self._notify_window, DebugEvent.DISPLAY_DEBUG,
@@ -297,7 +276,7 @@ class OBDPort:
         return None
     
     def send_command_binary(self, cmd, wait_response=True):
-        if type(cmd) != bytearray or type(cmd) != bytes:
+        if type(cmd) != bytearray and type(cmd) != bytes:
             raise TypeError('cmd must be convertable to bytearray')
 
         res = self.send_command(' '.join('%02X' % i for i in bytearray(cmd)), wait_response)
@@ -315,36 +294,13 @@ class OBDPort:
         if self.State != 1:
             raise IOError("Not connected")
 
-        if self._port:
-            try:
-                self._port.flushOutput()
-                self._port.flushInput()
-                for c in data:
-                    self._port.write(c)
-                #debug_display(self._notify_window, 3, "Send command:" + data)
-            except serial.SerialException as e:
-                raise IOError("SerialException " + str(e))
-        elif self._sock:
-            try:
-                self._sock.send(data)
-            except IOError as e:
-                raise IOError("IOError " + str(e))
+        self._transport.Send(bytes(data, 'ascii'))
 
     def recv_raw(self, len):
         if self.State != 1:
             raise IOError("Not connected")
 
-        data = ''
-        if self._port != None:
-            data = self._port.read(len)
-        elif self._sock != None:
-            data = self._sock.recv(len)
-        
-        # raise an IOError if we lost connection
-        #if len(data) == 0:
-        #    raise IOError("Connection to port lost.")
-
-        return data
+        return self._transport.Recv(len)
 
     def recv_data(self):
         """Receives at least line of data
@@ -352,14 +308,14 @@ class OBDPort:
         raises an IOError if connection is lost"""
         lines = []
         # Continously receive until we accumulate a line
-        while '\r' not in self._recv_buf:
+        while b'\r' not in self._recv_buf:
             self._recv_buf += self.recv_raw(1024)
 
-        while '\r' in self._recv_buf:
+        while b'\r' in self._recv_buf:
             # We've received (one or more) full lines! Return them!
-            end = self._recv_buf.find('\r')
+            end = self._recv_buf.find(b'\r')
             line = self._recv_buf[0:end]
-            lines.append(line)
+            lines.append(str(line, 'ascii'))
 
             # Remove the received part from the buffer.
             if len(self._recv_buf) > end:
@@ -375,57 +331,28 @@ class OBDPort:
         Retrieves the result of a command"""
         #time.sleep(0.01)
         repeat_count = 0
-        if self._port is not None:
-            buffer = ""
-            while 1:
-                c = self._port.read(1)
-                if len(c) == 0:
-                   if(repeat_count == 5):
-                       break
-                   print("Got nothing\n")
-                   repeat_count = repeat_count + 1
-                   continue
+        buffer = bytearray()
+        while True:
+            data = self._transport.Recv(4096)
+            if len(data) == 0:
+                print("Socket closed.")
+                return None
 
-                # Don't add newlines
-                if c == '\r':
-                   continue
+            buffer.extend(data)
 
-                if c == ">":
-                   break
+            # Chevron marks end of response
+            if b'>' in data:
+                break
 
-                if buffer != "" or c != ">":  # if something is in buffer, add everything
-                   buffer = buffer + c
+        data = buffer.decode()
 
-            #debug_display(self._notify_window, 3, "Get result:" + buffer)
-            if(buffer == ""):
-               return None
-            return buffer
-        elif self._sock != None:
-            buffer = bytearray()
-            while True:
-                data = self._sock.recv(4096)
-                if len(data) == 0:
-                    print("Socket closed.")
-                    return None
+        # Strip off the ending
+        end = data.find('\r\r>')
+        data = data[0:end]
+        if strip_newlines:
+            data = data.replace('\r', '')
 
-                buffer.extend(data)
-
-                # Chevron marks end of response
-                if '>' in data:
-                    break
-
-            data = buffer.decode()
-
-            # Strip off the ending
-            end = data.find('\r\r>')
-            data = data[0:end]
-            if strip_newlines:
-                data = data.replace('\r', '')
-
-            return data
-        else:
-           debug_display(self._notify_window, 3, "NO connection!")
-        return None
+        return data
 
     def enable_headers(self, enable):
         """Internal use only: Not a public interface"""
@@ -492,12 +419,12 @@ class OBDPort:
             print(("boguscode?" + code))
 
         # get the first thing returned, echo should be off
-        code = string.split(code, "\r")
+        code = code.split("\r")
         code = code[0]
 
         # remove whitespace
-        code = string.split(code)
-        code = string.join(code, "")
+        code = code.split()
+        code = ''.join(code)
 
         #cables can behave differently
         if code[:6] == "NODATA":  # there is no such sensor
@@ -593,7 +520,7 @@ class OBDPort:
 
         print(("Number of stored DTC: " + str(dtcNumber) + ", MIL " + (mil and "ACTIVE" or "inactive")))
         # get all DTC, 3 per mesg response
-        for i in range(0, ((dtcNumber + 2) / 3)):
+        for i in range(0, int((dtcNumber + 2) / 3)):
             res = self.send_command_binary(GET_DTC_COMMAND)
             for i in range(0, 3):
                 val = (res[i + 1] << 8) | res[i + 2]  # DTC val as int
@@ -644,7 +571,7 @@ class OBDPort:
          if file:
               data = self.sensor(sensor_index)
               file.write("%s     \t%s(%s)\n" %
-                         ("Time", string.strip(data[0]), data[2]))
+                         ("Time", data[0].strip(), data[2]))
               while 1:
                    now = time.time()
                    data = self.sensor(sensor_index)
