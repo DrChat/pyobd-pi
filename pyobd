@@ -147,7 +147,6 @@ class MyApp(wx.App):
     class sensorProducer(threading.Thread):
 
         def __init__(self, _notify_window, portName, SERTIMEOUT, RECONNATTEMPTS, _nb):
-            from Queue import Queue
             self.portName = portName
             self.RECONNATTEMPTS = RECONNATTEMPTS
             self.SERTIMEOUT = SERTIMEOUT
