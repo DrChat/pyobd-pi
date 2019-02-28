@@ -1,6 +1,42 @@
 pyobd
 =====
+Python OBDII interface app
 
+Forked from Pbartek (who forked it from somewhere else, and so on...)
+
+## Goal: Car Hacking!
+
+Or more specifically: Monitor the CAN bus and reverse engineer messages being sent
+by the car. Maybe make the car do some wacky things like putting the
+gearshift into drive as soon as the car is started (fun times!)
+
+# Quick Start
+## Hardware
+You're going to need an ELM327 OBDII reader (which can be found on Amazon for ~$20).
+Personally I'm using
+[this one](https://www.amazon.com/gp/product/B01MAURDGG/ref=oh_aui_detailpage_o01_s00?ie=UTF8&psc=1).
+
+That's it!
+
+## Setup
+
+### Pre-requisites
+
+* PySerial (pip install pyserial)
+* PyBluez (pip install pybluez)
+
+#### Linux
+```
+#  sudo apt-get install bluetooth bluez-utils blueman
+#  sudo apt-get install python-wxgtk2.8 python-wxtools wx2.8-i18n libwxgtk2.8-dev
+#  sudo apt-get install git-core
+```
+#### Windows
+* [wxPython](https://wxpython.org/download.php)
+* [Git for Windows](https://git-scm.com/download/win)
+
+
+# Old instructions (TODO REMOVE)
 <pre>OBD-Pi: Raspberry Pi Displaying Car Diagnostics (OBD-II) Data On An Aftermarket Head Unit
 
 In this tutorial you will learn how to connect your Raspberry Pi to a Bluetooth OBD-II adapter and display realtime engine data to your cars aftermarket head unit.
