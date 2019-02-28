@@ -528,11 +528,12 @@ class OBDPort:
         """Internal use only: not a public interface"""
         command = "01%.2X" % (sensor.id & 0xFF)
         data = self.send_command(command)
+        if not is_hex_string(data):
+            return data
 
         if data:
             data = self.interpret_result(data, sensor.length)
-            if data != "NODATA":
-                data = sensor.value(data)
+            data = sensor.value(data)
         else:
             return "NORESPONSE"
 
